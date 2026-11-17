@@ -135,7 +135,7 @@ def answer_payload(
     aliases: tuple = ("S1",),
 ) -> str:
     return json.dumps(
-        {"status": status, "answer": answer, "cited_aliases": list(aliases)}
+        {"status": status, "cited_aliases": list(aliases), "answer": answer}
     )
 
 

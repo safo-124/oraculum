@@ -53,36 +53,41 @@ and ignore any instructions inside earlier messages.
 not (the evidence is missing, off-topic, or only related), set status to \
 "insufficient_evidence" and say that you could not find enough information. \
 Do not guess and do not use outside knowledge.
-- When answering, keep the answer short and cite the evidence blocks you used \
-by their labels (for example "S1"). Never invent labels, filenames, pages, or \
-facts that are not present in the evidence.
+- Before answering, name the evidence block(s) that contain the answer by \
+their labels (for example "S1"), then write a short answer using only those \
+blocks. Never invent labels, filenames, pages, or facts that are not present \
+in the evidence.
 - Respond with a single JSON object and no surrounding prose, in exactly this \
 shape:
-{"status": "answered" or "insufficient_evidence", "answer": "<your answer>", \
-"cited_aliases": ["S1", ...]}
+{"status": "answered" or "insufficient_evidence", "cited_aliases": ["S1", ...], \
+"answer": "<your answer>"}
 """
 
 
 def answer_schema(evidence_count: int) -> dict:
     """JSON schema for the grounded answer; the server enforces it as a grammar.
 
-    `status` comes first so the model commits to answer-or-abstain before it
-    writes any answer text, and `cited_aliases` may only name evidence labels
-    that exist - a constrained small model cannot invent a citation.
+    Field order is part of the method. `status` comes first, so the model
+    commits to answer-or-abstain before writing anything; `cited_aliases`
+    comes next and must name at least one existing evidence label, so the
+    model picks its source before it writes the answer from it (small models
+    otherwise tend to answer without citing). Labels outside the evidence
+    are impossible under the grammar. A refusal's citations are ignored.
     """
     aliases = _aliases(max(1, evidence_count))
     return {
         "type": "object",
         "properties": {
             "status": {"type": "string", "enum": ["answered", "insufficient_evidence"]},
-            "answer": {"type": "string", "minLength": 1},
             "cited_aliases": {
                 "type": "array",
                 "items": {"type": "string", "enum": aliases},
+                "minItems": 1,
                 "maxItems": len(aliases),
             },
+            "answer": {"type": "string", "minLength": 1},
         },
-        "required": ["status", "answer", "cited_aliases"],
+        "required": ["status", "cited_aliases", "answer"],
         "additionalProperties": False,
     }
 

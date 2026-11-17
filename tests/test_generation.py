@@ -258,8 +258,9 @@ class TestGenerator:
         generator.generate("q", [make_hit(1), make_hit(2)])
         call = client.calls[0]
         schema = call["json_schema"]
-        assert list(schema["properties"]) == ["status", "answer", "cited_aliases"]
+        assert list(schema["properties"]) == ["status", "cited_aliases", "answer"]
         assert schema["properties"]["cited_aliases"]["items"]["enum"] == ["S1", "S2"]
+        assert schema["properties"]["cited_aliases"]["minItems"] == 1
         assert call["max_tokens"] == 123
         assert call["temperature"] == 0.5
         assert call["logprobs"] is True
@@ -291,7 +292,7 @@ class TestAnswerSchema:
     def test_aliases_match_evidence_count(self) -> None:
         schema = answer_schema(3)
         assert schema["properties"]["cited_aliases"]["items"]["enum"] == ["S1", "S2", "S3"]
-        assert schema["required"] == ["status", "answer", "cited_aliases"]
+        assert schema["required"] == ["status", "cited_aliases", "answer"]
         assert schema["additionalProperties"] is False
 
 

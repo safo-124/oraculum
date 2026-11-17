@@ -22,6 +22,9 @@ RestartSec=5
 Nice=5
 CPUWeight=50
 IOWeight=50
+# If the machine ever runs out of memory, the kernel stops Oraculum first,
+# never a neighbouring service.
+OOMScoreAdjust=500
 MemoryHigh=1200M
 MemoryMax=1400M
 MemorySwapMax=128M
