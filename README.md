@@ -35,7 +35,7 @@ Results: [`evals/study/REPORT.md`](evals/study/REPORT.md), written by the last c
 
 ## Stack
 
-- **Language model:** Qwen2.5-1.5B-Instruct (GGUF, 4-bit) served by [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server`, using JSON-schema grammar decoding and token log-probabilities. Any server with the `/v1/chat/completions` wire format works (Ollama, vLLM, TGI).
+- **Language model:** Qwen2.5-Instruct (0.5B on the 4 GB demo server, 1.5B recommended; GGUF, 4-bit) served by [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server`, using JSON-schema grammar decoding and token log-probabilities. Any server with the `/v1/chat/completions` wire format works (Ollama, vLLM, TGI).
 - **Encoders (PyTorch, Hugging Face):** `BAAI/bge-small-en-v1.5` embeddings, `cross-encoder/ms-marco-MiniLM-L-6-v2` reranker, `cross-encoder/nli-deberta-v3-xsmall` answer verifier, all through sentence-transformers
 - **API:** Python 3.13, FastAPI + Uvicorn, [uv](https://docs.astral.sh/uv/)
 - **Retrieval:** ChromaDB (vectors) + SQLite FTS5 (BM25), fused with Reciprocal Rank Fusion, then reranked

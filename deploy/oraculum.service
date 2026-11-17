@@ -11,15 +11,21 @@ Group=oraculum
 WorkingDirectory=/srv/oraculum
 EnvironmentFile=/etc/oraculum/oraculum.env
 ExecStart=/srv/oraculum/.venv/bin/uvicorn app.main:app \
-    --host 127.0.0.1 --port 8090 --workers 1 \
+    --host 127.0.0.1 --port 8092 --workers 1 \
     --proxy-headers --forwarded-allow-ips 127.0.0.1
 Restart=on-failure
 RestartSec=5
 
+# Three small PyTorch encoders + FastAPI: about 0.9 GB resident. Hard
+# ceiling with almost no swap, so a spike restarts Oraculum instead of
+# squeezing the other services on the machine.
 Nice=5
 CPUWeight=50
 IOWeight=50
-MemoryMax=2G
+MemoryHigh=1200M
+MemoryMax=1400M
+MemorySwapMax=128M
+Environment=MALLOC_ARENA_MAX=2
 
 NoNewPrivileges=true
 ProtectSystem=strict

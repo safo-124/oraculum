@@ -17,7 +17,7 @@ oraculum.YOUR-SERVER-IP.nip.io {
 		# Everything else under an API prefix goes to uvicorn. flush_interval
 		# -1 streams answers (Server-Sent Events) without buffering.
 		@api path /chat* /documents* /retrieve* /conversations* /health* /auth* /admin* /usage*
-		reverse_proxy @api 127.0.0.1:8090 {
+		reverse_proxy @api 127.0.0.1:8092 {
 			flush_interval -1
 		}
 
