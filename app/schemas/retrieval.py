@@ -1,0 +1,53 @@
+import uuid as uuid_module
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class RetrievalRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    # None = use the server default (RETRIEVAL_TOP_K); a value must be 1-20.
+    top_k: int | None = Field(default=None, ge=1, le=20)
+    document_id: str | None = None
+
+    @field_validator("question")
+    @classmethod
+    def strip_question(cls, value: str) -> str:
+        if stripped := value.strip():
+            return stripped
+        else:
+            raise ValueError("question must not be blank")
+
+    @field_validator("document_id")
+    @classmethod
+    def validate_document_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            uuid_module.UUID(value)
+        except ValueError as exc:
+            raise ValueError("document_id must be a valid UUID") from exc
+        return value
+
+
+class RetrievalResult(BaseModel):
+    source_id: str
+    document_id: str
+    filename: str
+    page: int
+    chunk_index: int
+    text: str
+    score: float = Field(
+        description="Cosine similarity or fused RRF rank support; a ranking signal, not calibrated confidence."
+    )
+    rerank_score: float | None = Field(
+        default=None,
+        description="Cross-encoder relevance logit (when reranking is on); higher is more relevant.",
+    )
+
+
+class RetrievalResponse(BaseModel):
+    question: str
+    top_k: int
+    document_id: str | None = None
+    elapsed_ms: float
+    results: list[RetrievalResult] = Field(default_factory=list)

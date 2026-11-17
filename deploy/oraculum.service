@@ -1,0 +1,38 @@
+# Oraculum API (FastAPI + local PyTorch encoders). Caddy proxies to it.
+[Unit]
+Description=Oraculum API
+After=network.target postgresql.service oraculum-llm.service
+Wants=oraculum-llm.service
+
+[Service]
+Type=simple
+User=oraculum
+Group=oraculum
+WorkingDirectory=/srv/oraculum
+EnvironmentFile=/etc/oraculum/oraculum.env
+ExecStart=/srv/oraculum/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8090 --workers 1 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+
+Nice=5
+CPUWeight=50
+IOWeight=50
+MemoryMax=2G
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# The app writes only inside its own folder (data/, models/, .cache/).
+ReadWritePaths=/srv/oraculum
+
+[Install]
+WantedBy=multi-user.target

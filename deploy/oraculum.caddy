@@ -1,0 +1,34 @@
+# Oraculum: static frontend + API reverse proxy, one origin.
+# Replace the hostname, then:  sudo cp oraculum.caddy /etc/caddy/sites/
+oraculum.YOUR-SERVER-IP.nip.io {
+	encode zstd gzip
+
+	route {
+		# A browser opening an app page (Accept: text/html) gets the SPA
+		# shell, even where the path is also an API route (/chat, /documents,
+		# /admin/...). Same rule as the Vite dev proxy.
+		@spa_nav {
+			method GET
+			header Accept *text/html*
+			path /chat /documents /login /register /admin /admin/*
+		}
+		rewrite @spa_nav /index.html
+
+		# Everything else under an API prefix goes to uvicorn. flush_interval
+		# -1 streams answers (Server-Sent Events) without buffering.
+		@api path /chat* /documents* /retrieve* /conversations* /health* /auth* /admin* /usage*
+		reverse_proxy @api 127.0.0.1:8090 {
+			flush_interval -1
+		}
+
+		root * /srv/oraculum/frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

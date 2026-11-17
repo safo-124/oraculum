@@ -1,0 +1,44 @@
+[project]
+name = "oraculum"
+version = "0.1.0"
+description = "Oraculum — a RAG assistant on open models with calibrated abstention"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.0",
+    "argon2-cffi>=25.1.0",
+    "chromadb>=1.5.9",
+    "fastapi>=0.143.2",
+    "httpx>=0.28.1",
+    "huggingface-hub>=0.30",
+    "numpy>=2.0",
+    "psycopg[binary]>=3.3.6",
+    "pydantic-settings>=2.16.0",
+    "pypdf>=6.21.0",
+    "pytest>=9.1.1",
+    "python-multipart>=0.0.32",
+    "sentence-transformers>=5.0",
+    "sqlalchemy>=2.0",
+    "tokenizers>=0.21",
+    "torch>=2.6",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[project.optional-dependencies]
+# Study scripts only (plots); the server never imports matplotlib.
+research = ["matplotlib>=3.9"]
+
+# CPU-only PyTorch wheels (~200 MB instead of the multi-GB CUDA build).
+# On a CUDA machine, delete these two blocks and run `uv sync` again.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

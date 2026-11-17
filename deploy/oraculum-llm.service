@@ -1,0 +1,42 @@
+# llama.cpp model server for Oraculum (Qwen2.5 Instruct, GGUF, CPU).
+# Listens on localhost only; the app is its only client.
+[Unit]
+Description=Oraculum model server (llama.cpp)
+After=network.target
+
+[Service]
+Type=simple
+User=oraculum
+Group=oraculum
+WorkingDirectory=/opt/llama.cpp
+Environment=LD_LIBRARY_PATH=/opt/llama.cpp
+ExecStart=/opt/llama.cpp/llama-server \
+    --model /srv/oraculum/models/qwen2.5-1.5b-instruct-q4_k_m.gguf \
+    --alias qwen2.5-1.5b-instruct \
+    --host 127.0.0.1 --port 8081 \
+    --ctx-size 4096 --parallel 1 --threads 2
+Restart=on-failure
+RestartSec=5
+
+# Share the machine politely with the other services on it:
+# lower CPU priority than the default (100), and a hard memory ceiling.
+Nice=10
+CPUWeight=50
+IOWeight=50
+MemoryMax=2G
+
+# Hardening: read-only system, no home, no privilege escalation.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadOnlyPaths=/srv/oraculum/models
+
+[Install]
+WantedBy=multi-user.target

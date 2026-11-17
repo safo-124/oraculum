@@ -1,0 +1,464 @@
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUp, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ApiError, api } from "../api/client";
+import type {
+  ChatResponse,
+  FeedbackRating,
+  MessageRecord,
+  Source,
+} from "../api/types";
+import EvidencePanel from "../components/EvidencePanel";
+import Skeleton from "../components/Skeleton";
+import ConfidenceNote from "../components/ConfidenceNote";
+import SourceCard from "../components/SourceCard";
+
+interface ChatProps {
+  onAuthRequired: () => void;
+  conversationId: string | null;
+  onConversationCreated: (conversationId: string) => void;
+  /** Corpus size for the first-run checklist (0 docs → onboarding). */
+  documentCount: number;
+  documentsLoading: boolean;
+  /** Public-demo visitor: stateless chat, no uploads. */
+  isGuest?: boolean;
+}
+
+interface Message {
+  role: "user" | "assistant";
+  text: string;
+  response?: ChatResponse;
+  // Assistant message row id + stored thumbs state (null until rated).
+  messageId?: string | null;
+  feedback?: FeedbackRating;
+}
+
+const SUGGESTIONS = [
+  "How many days of annual leave do employees get?",
+  "How do I reset a forgotten password?",
+  // Not in the corpus: shows an explicit refusal instead of a guess.
+  "How many days of parental leave do new fathers get?",
+];
+
+function toMessage(record: MessageRecord, conversationId: string | null): Message {
+  if (record.role === "user") return { role: "user", text: record.content };
+  return {
+    role: "assistant",
+    text: record.content,
+    messageId: record.id,
+    feedback: record.feedback ?? null,
+    response: {
+      question: "",
+      answer: record.content,
+      status:
+        record.status === "insufficient_evidence"
+          ? "insufficient_evidence"
+          : "answered",
+      sources: record.sources,
+      model: record.model ?? "",
+      retrieval_ms: record.retrieval_ms ?? 0,
+      generation_ms: record.generation_ms ?? 0,
+      conversation_id: conversationId,
+      message_id: record.id,
+    },
+  };
+}
+
+export default function Chat({
+  onAuthRequired,
+  conversationId,
+  onConversationCreated,
+  documentCount,
+  documentsLoading,
+  isGuest = false,
+}: ChatProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loadingThread, setLoadingThread] = useState(conversationId !== null);
+  const [error, setError] = useState<string | null>(null);
+  const [needsAuth, setNeedsAuth] = useState(false);
+  const [evidence, setEvidence] = useState<Source | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load history whenever this thread is opened. Keyed on the id only (no
+  // ref guard): React StrictMode runs effects twice, and a "skip if already
+  // started" ref would cancel the first run and never start a second one,
+  // leaving the thread stuck loading. The id that arrives after the first
+  // message (null -> created id) simply refetches the just-saved exchange.
+  useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+    setLoadingThread(true);
+    setError(null);
+    (async () => {
+      try {
+        const detail = await api.getConversation(conversationId);
+        if (cancelled) return;
+        const loaded = detail.messages.map((m) => toMessage(m, conversationId));
+        setMessages(loaded);
+        // Show the evidence for the latest grounded answer, like a fresh one.
+        const last = loaded[loaded.length - 1];
+        if (last?.response && last.response.sources.length > 0) {
+          setEvidence(last.response.sources[0]);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(
+          err instanceof ApiError
+            ? err.status === 404
+              ? "Conversation not found — it may have been deleted."
+              : err.message
+            : "Unexpected error.",
+        );
+        if (err instanceof ApiError && err.status === 401) setNeedsAuth(true);
+      } finally {
+        if (!cancelled) setLoadingThread(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, busy]);
+
+  // Auto-grow the composer textarea.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
+  async function submit() {
+    const question = input.trim();
+    if (!question || busy) return;
+    // Optimistic user bubble + a placeholder for the streamed answer, so
+    // deltas have a target and a failure can roll both back in one slice.
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: question },
+      { role: "assistant", text: "" },
+    ]);
+    setInput("");
+    setBusy(true);
+    setError(null);
+    setNeedsAuth(false);
+    try {
+      const response = await api.streamChat(
+        isGuest
+          ? { question }
+          : { question, conversation_id: conversationId ?? null },
+        {
+          onDelta: (text) =>
+            setMessages((prev) => {
+              if (prev.length === 0) return prev;
+              const last = prev[prev.length - 1];
+              return [
+                ...prev.slice(0, -1),
+                { ...last, text: last.text + text },
+              ];
+            }),
+        },
+      );
+      // Deltas are cosmetic: replace the placeholder with the validated,
+      // citation-resolved answer the server actually stands behind.
+      setMessages((prev) => [
+        ...prev.slice(0, -1),
+        {
+          role: "assistant",
+          text: response.answer,
+          response,
+          messageId: response.message_id ?? null,
+          feedback: null,
+        },
+      ]);
+      // Grounded answer -> open its top citation beside the chat.
+      setEvidence(response.sources.length > 0 ? response.sources[0] : null);
+      if (!conversationId && response.conversation_id) {
+        onConversationCreated(response.conversation_id);
+      }
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.status === 429
+            ? `Rate limit reached — retry in ${err.retryAfterSeconds ?? 60}s.`
+            : err.message
+          : "Unexpected error.";
+      setError(message);
+      if (err instanceof ApiError && err.status === 401) setNeedsAuth(true);
+      // Roll back the optimistic user message, the partial answer, and
+      // restore the input for editing.
+      setMessages((prev) => prev.slice(0, -2));
+      setInput(question);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleFeedback(index: number, next: "up" | "down") {
+    const message = messages[index];
+    const messageId = message?.messageId;
+    if (!messageId) return;
+    const current = message.feedback ?? null;
+    // Clicking the active thumb again clears the vote (toggle off).
+    const value: FeedbackRating = current === next ? null : next;
+    setMessages((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, feedback: value } : m)),
+    );
+    try {
+      await api.setFeedback(messageId, value);
+    } catch (err) {
+      // Optimistic update was wrong: put the old value back.
+      setMessages((prev) =>
+        prev.map((m, i) => (i === index ? { ...m, feedback: current } : m)),
+      );
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not save your feedback.",
+      );
+    }
+  }
+
+  return (
+    <div className="flex h-full">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {error && (
+        <div className="mx-auto mt-3 flex w-full max-w-3xl items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm text-red-600 dark:text-red-400">
+          <span className="flex-1">{error}</span>
+          {needsAuth && (
+            <button
+              className="rounded-lg border border-red-500/40 px-2.5 py-1 text-xs font-medium hover:bg-red-500/15"
+              onClick={onAuthRequired}
+            >
+              Sign in
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Thread */}
+      <div className="flex-1 overflow-y-auto">
+        {loadingThread ? (
+          /* Skeleton mirrors the real layout (user bubble right, answer
+             left) so opening a thread doesn't flash a bare spinner. */
+          <div
+            className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6"
+            role="status"
+            aria-label="Loading conversation"
+          >
+            <div className="flex justify-end">
+              <Skeleton className="h-11 w-2/3 rounded-3xl rounded-br-lg" />
+            </div>
+            <div className="space-y-2.5">
+              <Skeleton className="h-4 w-11/12" />
+              <Skeleton className="h-4 w-5/6" />
+              <Skeleton className="h-4 w-3/5" />
+            </div>
+            <div className="flex justify-end">
+              <Skeleton className="h-9 w-1/2 rounded-3xl rounded-br-lg" />
+            </div>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex min-h-full flex-col items-center justify-center px-4 py-12">
+            <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-on-accent text-xl font-bold">
+              O
+            </span>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              What's in your knowledge base?
+            </h2>
+            <p className="mt-2 max-w-md text-center text-sm text-muted">
+              Ask a question about your indexed documents. Answers cite only
+              retrieved evidence — if the corpus doesn't cover it, you'll get an
+              explicit refusal instead of a guess.
+            </p>
+
+            {/* First-run checklist: no documents yet → nothing to cite. */}
+            {!isGuest && !documentsLoading && documentCount === 0 && (
+              <div className="mt-6 w-full max-w-2xl rounded-2xl border border-accent/30 bg-accent/[0.06] px-4 py-3.5 text-left">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
+                  Get started
+                </p>
+                <ol className="mt-2.5 space-y-2 text-sm">
+                  <li className="flex items-center gap-2.5 text-ink">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-on-accent">
+                      1
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      Upload a document so there's evidence to cite
+                    </span>
+                    <Link
+                      to="/documents"
+                      className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:text-ink"
+                    >
+                      Upload
+                    </Link>
+                  </li>
+                  <li className="flex items-center gap-2.5 text-faint">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface text-[11px] font-bold ring-1 ring-line">
+                      2
+                    </span>
+                    Ask your first question
+                  </li>
+                </ol>
+              </div>
+            )}
+
+            <div className="mt-8 grid w-full max-w-2xl gap-2 sm:grid-cols-3">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    setInput(s);
+                    inputRef.current?.focus();
+                  }}
+                  className="rounded-2xl border border-line bg-surface px-4 py-3 text-left text-[13px] leading-5 text-muted shadow-sm transition-colors hover:border-accent/50 hover:text-ink"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <p className="mt-6 max-w-md text-center text-xs leading-5 text-faint">
+              {isGuest
+                ? "Public demo on CPU: answers take 10–30 seconds. Each answer gets a calibrated confidence score, and low-confidence answers are withheld."
+                : "Chats save automatically — resume any of them from the sidebar."}
+            </p>
+          </div>
+        ) : (
+          <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
+            {messages.map((m, i) =>
+              m.role === "user" ? (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[85%] whitespace-pre-wrap rounded-3xl rounded-br-lg bg-surface px-4 py-2.5 text-[15px] leading-6 ring-1 ring-line">
+                    {m.text}
+                  </div>
+                </div>
+              ) : m.text === "" && !m.response ? null : (
+                <div key={i} className="text-[15px] leading-7">
+                  <p className="whitespace-pre-wrap">{m.text}</p>
+                  {m.response && <ConfidenceNote response={m.response} />}
+                  {m.response && m.response.sources.length > 0 && (
+                    <div className="mt-4">
+                      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">
+                        Sources
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {m.response.sources.map((s, idx) => (
+                          <SourceCard
+                            key={s.source_id}
+                            source={s}
+                            index={idx + 1}
+                            active={evidence?.source_id === s.source_id}
+                            onOpen={() => setEvidence(s)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {m.messageId && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-[11px] text-faint">
+                        Was this helpful?
+                      </span>
+                      <button
+                        onClick={() => toggleFeedback(i, "up")}
+                        aria-label="Good answer"
+                        aria-pressed={m.feedback === "up"}
+                        title="Good answer"
+                        className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
+                          m.feedback === "up"
+                            ? "border-accent/60 bg-accent/15 text-accent"
+                            : "border-line text-faint hover:border-accent/40 hover:text-ink"
+                        }`}
+                      >
+                        <ThumbsUp size={13} />
+                      </button>
+                      <button
+                        onClick={() => toggleFeedback(i, "down")}
+                        aria-label="Bad answer"
+                        aria-pressed={m.feedback === "down"}
+                        title="Bad answer"
+                        className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
+                          m.feedback === "down"
+                            ? "border-red-500/60 bg-red-500/15 text-red-500"
+                            : "border-line text-faint hover:border-red-400/50 hover:text-ink"
+                        }`}
+                      >
+                        <ThumbsDown size={13} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ),
+            )}
+            {busy && (
+              <div className="flex items-center gap-2.5 text-[15px] text-muted">
+                <Loader2 size={17} className="animate-spin text-accent" />
+                Searching evidence and thinking…
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Composer */}
+      <div className="shrink-0 border-t border-line bg-canvas/95 backdrop-blur">
+        <div className="mx-auto w-full max-w-3xl px-4 py-3">
+          <div className="flex items-end gap-2 rounded-3xl border border-line bg-surface px-4 py-3 shadow-lg transition-colors focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/20">
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={input}
+              placeholder="Ask anything about your documents…"
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  !e.shiftKey &&
+                  !e.nativeEvent.isComposing
+                ) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              disabled={busy || loadingThread}
+              className="max-h-40 flex-1 resize-none bg-transparent text-[15px] leading-6 outline-none placeholder:text-faint disabled:opacity-60"
+            />
+            <button
+              onClick={submit}
+              disabled={busy || loadingThread || !input.trim()}
+              aria-label="Send"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:opacity-35"
+            >
+              {busy ? (
+                <Loader2 size={17} className="animate-spin" />
+              ) : (
+                <ArrowUp size={17} strokeWidth={2.5} />
+              )}
+            </button>
+          </div>
+
+          <p className="mt-2 text-center text-[11px] text-faint">
+            Enter to send · Shift+Enter for a new line
+          </p>
+        </div>
+      </div>
+      </div>
+
+      {/* Evidence beside the chat, like the cited document in a viewer */}
+      {evidence && (
+        <EvidencePanel
+          key={evidence.source_id}
+          source={evidence}
+          onClose={() => setEvidence(null)}
+        />
+      )}
+    </div>
+  );
+}
