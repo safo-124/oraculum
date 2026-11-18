@@ -115,6 +115,10 @@ Copy-Item .env.example .env
 | `RETRIEVAL_HYBRID` | Fuse BM25 term search with vector search (default `true`; `false` = legacy vector-only) |
 | `RETRIEVAL_RRF_K` | Reciprocal Rank Fusion constant (default `60`) |
 | `BM25_DB_PATH` | SQLite FTS5 term-index file (default `data/bm25.db`) |
+| `AUTH_REGISTER_RATE_LIMIT_PER_MINUTE` | Sign-ups per IP per minute (default `3`; `0` disables) |
+| `AUTH_MAX_USERS` | Ceiling on the number of accounts (default unset = unlimited) |
+| `UPLOAD_MAX_DOCUMENTS_PER_USER` | Per-account document quota for regular users (default unset) |
+| `UPLOAD_MAX_BYTES_PER_USER` | Per-account upload bytes quota for regular users (default unset) |
 | `GUEST_MODE_ENABLED` | Public demo: visitors chat about the shared corpus without an account (default `false`) |
 | `GUEST_RATE_LIMIT_PER_MINUTE` | Guest questions per IP per minute (default `4`) |
 | `GUEST_GLOBAL_RATE_LIMIT_PER_MINUTE` | Guest questions per minute across all visitors (default `20`) |

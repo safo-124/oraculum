@@ -329,6 +329,7 @@ def register(
     response: Response,
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
+    limiter=Depends(get_rate_limiter),
 ) -> UserOut:
     """Create a regular user account; always role="user".
 
@@ -340,6 +341,21 @@ def register(
     """
     if not settings.auth_allow_registration:
         raise HTTPException(status_code=403, detail="Registration is disabled.")
+    limit = settings.auth_register_rate_limit_per_minute
+    if limit > 0 and not limiter.allow(f"auth:register:{_client_ip(request)}", limit):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many sign-ups from this network. Try again in a minute.",
+            headers={"Retry-After": "60"},
+        )
+    if (
+        settings.auth_max_users is not None
+        and repositories.count_users(session) >= settings.auth_max_users
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="This demo has reached its account limit. You can still try it as a guest.",
+        )
     if repositories.get_user_by_email(session, payload.email) is not None:
         raise HTTPException(status_code=409, detail="Email is already registered.")
     user_id = uuid.UUID(

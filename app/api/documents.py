@@ -96,6 +96,32 @@ async def _read_bounded(file: UploadFile, max_size: int) -> bytes:
     return bytes(data)
 
 
+def _enforce_upload_quota(
+    session: Session, actor: AuthActor, settings: Settings, incoming_bytes: int
+) -> None:
+    """Per-account quota for regular users; admins and API-key/local callers
+    are exempt. Raises 403 with a message the UI can show as-is."""
+    if actor.mode != "session" or actor.role != "user" or actor.user_id is None:
+        return
+    max_docs = settings.upload_max_documents_per_user
+    max_bytes = settings.upload_max_bytes_per_user
+    if max_docs is None and max_bytes is None:
+        return
+    count, used = repositories.owned_document_usage(session, actor.user_id)
+    if max_docs is not None and count >= max_docs:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Demo limit reached: {max_docs} documents per account. "
+            "Delete one to upload another.",
+        )
+    if max_bytes is not None and used + incoming_bytes > max_bytes:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Demo limit reached: {max_bytes // (1024 * 1024)} MB of uploads per account. "
+            "Delete a document to make room.",
+        )
+
+
 @router.post("", response_model=UploadDocumentResponse, status_code=202)
 async def upload_document(
     response: Response,
@@ -121,6 +147,7 @@ async def upload_document(
     """
     data = await _read_bounded(file, settings.max_file_size_bytes)
     filename = file.filename or ""
+    _enforce_upload_quota(session, actor, settings, len(data))
 
     try:
         extension = validate_upload(

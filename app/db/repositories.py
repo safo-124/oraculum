@@ -691,6 +691,16 @@ def count_users(session: Session) -> int:
     return session.scalar(select(func.count(User.id))) or 0
 
 
+def owned_document_usage(session: Session, user_id: uuid.UUID) -> tuple[int, int]:
+    """(document count, total bytes) of the documents a user owns."""
+    count, total = session.execute(
+        select(func.count(Document.id), func.coalesce(func.sum(Document.size_bytes), 0)).where(
+            Document.owner_user_id == user_id
+        )
+    ).one()
+    return int(count or 0), int(total or 0)
+
+
 def touch_last_login(session: Session, user_id: uuid.UUID) -> None:
     user = session.get(User, user_id)
     if user is not None:

@@ -12,7 +12,8 @@ function registerErrorMessage(error: unknown): string {
     case 0:
       return "Cannot reach the server. Is it running?";
     case 403:
-      return "Registration is disabled on this instance.";
+      // "Registration is disabled" or the demo's account limit, as sent.
+      return error.message || "Registration is disabled on this instance.";
     case 409:
       return "That email is already registered — sign in instead.";
     case 422:

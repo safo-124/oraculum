@@ -156,6 +156,17 @@ class Settings(BaseSettings):
     # local scope without a session exists only when explicitly enabled.
     auth_allow_anonymous: bool = False
     auth_login_rate_limit_per_minute: int = 5  # per IP AND per email; 0 disables
+    # Self-registration guards for a public deployment: sign-ups per IP per
+    # minute (0 disables) and a ceiling on the total number of accounts
+    # (None = unlimited).
+    auth_register_rate_limit_per_minute: int = 3
+    auth_max_users: int | None = None
+
+    # Per-account upload quota for regular users (admins, API-key and local
+    # callers are exempt). None = unlimited. On a small public server these
+    # keep one account from filling the disk or the indexing queue.
+    upload_max_documents_per_user: int | None = None
+    upload_max_bytes_per_user: int | None = None
 
     # Guest mode (public demo): visitors without an account may ask
     # questions about the SHARED corpus and read its documents. Guests
