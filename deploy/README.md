@@ -35,6 +35,9 @@ sudo useradd --system --create-home --home-dir /srv/oraculum --shell /usr/sbin/n
 sudo -u oraculum git clone https://github.com/safo-124/oraculum.git /tmp/oraculum-src
 sudo -u oraculum bash -c 'shopt -s dotglob && mv /tmp/oraculum-src/* /srv/oraculum/ && rmdir /tmp/oraculum-src'
 sudo -u oraculum mkdir -p /srv/oraculum/models /srv/oraculum/data
+# Caddy (its own user) must pass through to frontend/dist; data/ stays private.
+sudo chmod 711 /srv/oraculum
+sudo chmod 700 /srv/oraculum/data
 ```
 
 ## 2. Python environment (uv)
@@ -61,13 +64,27 @@ sudo -u oraculum -H env PATH=/opt/node22/bin:/usr/bin:/bin bash -c \
 ## 4. Model server (llama.cpp + Qwen2.5)
 
 ```bash
-sudo apt-get install -y unzip
-URL=$(curl -fsSL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | grep -o 'https://[^"]*-bin-ubuntu-x64.zip' | head -1)
-echo "$URL"
-curl -fL -o /tmp/llama.zip "$URL" && rm -rf /tmp/llama && unzip -q /tmp/llama.zip -d /tmp/llama
+command -v unzip || sudo apt-get install -y unzip
+# Stops at the first problem and works only inside its own temporary folder.
+# llama.cpp's "latest" release is a placeholder, so search recent releases.
+bash -euo pipefail <<'EOF'
+work=$(mktemp -d)
+curl -fsSL "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30" -o "$work/releases.json"
+url=$(grep -o 'https://[^"]*-bin-\(ubuntu\|linux\)-x64\.\(zip\|tar\.gz\)' "$work/releases.json" | head -1 || true)
+[ -n "$url" ] || { echo "STOP: no Linux x64 CPU build found"; rm -rf "$work"; exit 1; }
+echo "Downloading $url"
+curl -fL -o "$work/pkg" "$url"
+mkdir "$work/x"
+case "$url" in *.zip) unzip -q "$work/pkg" -d "$work/x" ;; *.tar.gz) tar -xzf "$work/pkg" -C "$work/x" ;; esac
+bin=$(find "$work/x" -name llama-server -type f | head -1)
+[ -n "$bin" ] || { echo "STOP: llama-server not in the package"; rm -rf "$work"; exit 1; }
+src=$(dirname "$bin")
+case "$src" in "$work"/x*) ;; *) echo "STOP: unexpected path $src"; exit 1 ;; esac
 sudo mkdir -p /opt/llama.cpp
-sudo cp -a "$(dirname "$(find /tmp/llama -name llama-server -type f | head -1)")"/. /opt/llama.cpp/
+sudo cp -a "$src"/. /opt/llama.cpp/
+rm -rf "$work"
 LD_LIBRARY_PATH=/opt/llama.cpp /opt/llama.cpp/llama-server --version
+EOF
 
 sudo -u oraculum curl -fL -o /srv/oraculum/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
   https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
@@ -134,6 +151,11 @@ until then answers are shown without a confidence gate.
 
 ## 8. Caddy site (added beside the existing sites)
 
+Import the Oraculum site **by its exact file name**, never with a wildcard
+(other files in `sites/` may be inactive on purpose). If another project's
+deploy installs `/etc/caddy/Caddyfile`, add the `import` line to that
+project's copy too, or its next deploy will drop Oraculum.
+
 Use the server's public IP in the hostname (nip.io resolves it, and Caddy
 gets the HTTPS certificate):
 
@@ -156,7 +178,7 @@ same `import` line there too, so that project's next deploy keeps it.
 
 Open `https://oraculum.<IP>.nip.io` and use **Try the demo**.
 
-## 9. Calibration study (about 2 hours on CPU, runs in the background)
+## 9. Calibration study (about 3–4 hours on 2 vCPUs, runs in the background)
 
 On a 4 GB server the study needs the API's memory, so the demo is offline
 while it runs. Start it in the evening:
@@ -164,11 +186,12 @@ while it runs. Start it in the evening:
 ```bash
 sudo systemctl stop oraculum
 sudo systemd-run --unit=oraculum-study --uid=oraculum --gid=oraculum \
-  --working-directory=/srv/oraculum --setenv=HOME=/srv/oraculum \
+  --working-directory=/srv/oraculum --setenv=HOME=/srv/oraculum --setenv=PYTHONUNBUFFERED=1 \
   -p EnvironmentFile=/etc/oraculum/oraculum.env -p Nice=15 -p CPUWeight=20 \
-  -p MemoryMax=1400M -p MemorySwapMax=128M \
-  /srv/oraculum/deploy/run_study.sh
-journalctl -u oraculum-study -f      # Ctrl+C stops watching, not the run
+  -p MemoryMax=1400M -p MemorySwapMax=128M -p OOMScoreAdjust=500 \
+  /bin/bash /srv/oraculum/deploy/run_study.sh
+sudo journalctl -u oraculum-study -f -a   # Ctrl+C stops watching, not the run
+sudo -u oraculum wc -l /srv/oraculum/evals/runs/squad.jsonl   # progress
 ```
 
 The study builds the SQuAD 2.0 and in-domain benchmarks, runs every question

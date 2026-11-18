@@ -5,6 +5,11 @@
 # ~0.4 GB) uses about 0.6 GB with a 4k context. On 8 GB or more, switch to
 # qwen2.5-1.5b-instruct-q4_k_m.gguf (alias qwen2.5-1.5b-instruct) and raise
 # MemoryMax to 2G.
+#
+# --cache-ram 0: recent llama-server builds keep a host-RAM prompt cache
+# (default up to 8 GB). Every benchmark question has a different prompt, so
+# the cache only grows; under a memory cap it pushed the server into
+# throttling and 3-minute timeouts. Disabled.
 [Unit]
 Description=Oraculum model server (llama.cpp)
 After=network.target
@@ -19,7 +24,7 @@ ExecStart=/opt/llama.cpp/llama-server \
     --model /srv/oraculum/models/qwen2.5-0.5b-instruct-q4_k_m.gguf \
     --alias qwen2.5-0.5b-instruct \
     --host 127.0.0.1 --port 8081 \
-    --ctx-size 4096 --parallel 1 --threads 2
+    --ctx-size 4096 --parallel 1 --threads 2 --cache-ram 0
 Restart=on-failure
 RestartSec=5
 
@@ -33,7 +38,7 @@ IOWeight=50
 # If the machine ever runs out of memory, the kernel stops Oraculum first,
 # never a neighbouring service.
 OOMScoreAdjust=500
-MemoryHigh=800M
+MemoryHigh=950M
 MemoryMax=1G
 MemorySwapMax=128M
 
