@@ -14,6 +14,8 @@ os.environ["LOG_FILE"] = ""
 os.environ["CHUNK_TOKENIZER"] = "regex"
 os.environ["MODELS_PRELOAD"] = "false"
 os.environ["HF_HUB_OFFLINE"] = "1"
+# Activity tracking writes rows per request; tests opt in explicitly.
+os.environ["ACTIVITY_TRACKING_ENABLED"] = "false"
 os.environ.setdefault("CONFIDENCE_CALIBRATOR_PATH", "tests/_no_calibrator.json")
 
 from app.api.chat import get_generator

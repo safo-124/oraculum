@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.admin import router as admin_router
+from app.api.analytics import router as analytics_router
 from app.api.auth import get_actor, router as auth_router
 from app.api.chat import router as chat_router
 from app.api.conversations import router as conversations_router
@@ -89,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # harden_request runs before get_actor: CSRF/body-cap rejections are
     # deterministic and never depend on resolving an identity first.
     app.include_router(auth_router, dependencies=[Depends(harden_request)])
+    app.include_router(analytics_router, dependencies=[Depends(harden_request)])
     app.include_router(
         documents_router, dependencies=[Depends(harden_request), Depends(get_actor)]
     )

@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import {
   Activity,
   ArrowLeft,
+  BarChart3,
   Gauge,
   MessageSquare,
   ScrollText,
@@ -11,6 +12,7 @@ import {
 const SECTIONS = [
   { to: "/admin", label: "Overview", icon: Gauge, end: true },
   { to: "/admin/users", label: "Users", icon: Users },
+  { to: "/admin/activity", label: "Activity", icon: BarChart3 },
   { to: "/admin/usage", label: "Usage", icon: Activity },
   { to: "/admin/feedback", label: "Feedback", icon: MessageSquare },
   { to: "/admin/audit", label: "Audit log", icon: ScrollText },

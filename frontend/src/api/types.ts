@@ -275,3 +275,41 @@ export interface AuditEvent {
   detail: Record<string, unknown> | null;
   created_at: string;
 }
+
+// ---------------------------------------------------------- admin activity
+
+export interface ActivityTotals {
+  visitors: number;
+  guests_tried: number;
+  guest_questions: number;
+  signups: number;
+  active_users: number;
+  user_questions: number;
+  uploads: number;
+  total_users: number;
+}
+
+export interface ActivityDay {
+  day: string;
+  visitors: number;
+  guests_tried: number;
+  guest_questions: number;
+  signups: number;
+  user_questions: number;
+}
+
+export interface ActivityUser {
+  email: string;
+  display_name: string | null;
+  joined: string;
+  questions: number;
+  uploads: number;
+  last_active: string | null;
+}
+
+export interface AdminActivity {
+  days: number;
+  totals: ActivityTotals;
+  daily: ActivityDay[];
+  users: ActivityUser[];
+}

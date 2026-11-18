@@ -186,3 +186,29 @@ class UsageEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class ActivityEvent(Base):
+    """One visit or question, for the admin Activity page.
+
+    Privacy: no IP address and no question text is stored. `visitor` is a
+    salted SHA-256 of the client IP (truncated), enough to count distinct
+    visitors without being reversible without the server's salt. user_id is
+    set only for signed-in accounts and is SET NULL when an account goes.
+    """
+
+    __tablename__ = "activity_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    # "visit" (the web app opened a page) or "question" (chat request).
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    # "guest" | "user" | "admin" | "local" | "api_key"
+    actor_kind: Mapped[str] = mapped_column(String(16), index=True)
+    visitor: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    path: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

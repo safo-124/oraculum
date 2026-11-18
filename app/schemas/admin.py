@@ -34,6 +34,42 @@ class UserPatch(BaseModel):
     monthly_budget_usd: float | None = Field(default=None, ge=0)
 
 
+class ActivityTotals(BaseModel):
+    visitors: int  # distinct visitors who opened the web app
+    guests_tried: int  # distinct guests who asked at least one question
+    guest_questions: int
+    signups: int  # accounts created in the window
+    active_users: int  # accounts that asked or uploaded in the window
+    user_questions: int
+    uploads: int
+    total_users: int
+
+
+class ActivityDay(BaseModel):
+    day: str
+    visitors: int
+    guests_tried: int
+    guest_questions: int
+    signups: int
+    user_questions: int
+
+
+class ActivityUser(BaseModel):
+    email: str
+    display_name: str | None = None
+    joined: datetime
+    questions: int  # in the window
+    uploads: int  # all time
+    last_active: datetime | None = None
+
+
+class ActivityResponse(BaseModel):
+    days: int
+    totals: ActivityTotals
+    daily: list[ActivityDay]
+    users: list[ActivityUser]
+
+
 class PasswordResetOut(BaseModel):
     """Result of an admin-forced password reset."""
 

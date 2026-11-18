@@ -24,6 +24,7 @@ from app.config import Settings, get_settings
 from app.db import repositories
 from app.db.models import ChatMessage, Conversation, Document
 from app.schemas.admin import (
+    ActivityResponse,
     AdminUserOut,
     AuditEventOut,
     FeedbackItem,
@@ -258,6 +259,21 @@ def usage(
         ],
         spend_usd=round(sum(row["spend_usd"] for row in daily), 6),
     )
+
+
+# --------------------------------------------------------------- activity
+
+
+@router.get("/activity", response_model=ActivityResponse)
+def activity(
+    days: int = Query(default=14, ge=1, le=90),
+    db: Session = Depends(get_db_session),
+    _admin: object = Depends(require_admin),
+) -> ActivityResponse:
+    """Visitors who tried the demo, and accounts that signed up and used it."""
+    from app.services.activity import activity_summary
+
+    return ActivityResponse(**activity_summary(db, days))
 
 
 # --------------------------------------------------------------- feedback

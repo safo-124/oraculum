@@ -1,6 +1,7 @@
 // Fetch wrapper: request IDs, optional API key, typed HTTP errors.
 
 import type {
+  AdminActivity,
   AdminOverview,
   AdminUser,
   AdminUsage,
@@ -359,6 +360,11 @@ export const api = {
       {},
     ),
   adminUsage: (days = 14) => apiFetch<AdminUsage>(`/admin/usage?days=${days}`),
+  adminActivity: (days = 14) =>
+    apiFetch<AdminActivity>(`/admin/activity?days=${days}`),
+  // Page-view beacon for the admin Activity page; never throws.
+  trackVisit: (path: string) =>
+    post<void>("/analytics/visit", { path }).catch(() => undefined),
   adminFeedback: (rating?: "up" | "down") =>
     apiFetch<FeedbackItem[]>(
       `/admin/feedback${rating ? `?rating=${rating}` : ""}`,

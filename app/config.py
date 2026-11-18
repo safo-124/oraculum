@@ -168,6 +168,12 @@ class Settings(BaseSettings):
     upload_max_documents_per_user: int | None = None
     upload_max_bytes_per_user: int | None = None
 
+    # Admin Activity page: count visits and questions per visitor (salted IP
+    # hash, never the IP or question text). The salt is read from
+    # ANALYTICS_SALT, or generated once into data/analytics_salt.
+    activity_tracking_enabled: bool = True
+    analytics_salt: str | None = None
+
     # Guest mode (public demo): visitors without an account may ask
     # questions about the SHARED corpus and read its documents. Guests
     # cannot upload, delete, save conversations, vote or see usage; their

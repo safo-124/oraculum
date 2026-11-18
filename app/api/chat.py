@@ -40,6 +40,7 @@ from app.services.errors import (
 )
 from app.services.generation import INSUFFICIENT_ANSWER, Generator
 from app.services.pricing import cost_usd
+from app.services.activity import track_question
 from app.services.rate_limit import enforce_rate_limit
 from app.services.reranker import Reranker
 from app.services.retrieval import EmptyQuestionError, RetrievalOutcome, retrieve_documents
@@ -536,7 +537,11 @@ def _store_in_cache(
         logger.warning("Answer cache store failed", exc_info=True)
 
 
-@router.post("", response_model=ChatResponse, dependencies=[Depends(enforce_rate_limit)])
+@router.post(
+    "",
+    response_model=ChatResponse,
+    dependencies=[Depends(enforce_rate_limit), Depends(track_question)],
+)
 def chat(
     request: ChatRequest,
     response: Response,
@@ -711,7 +716,7 @@ def chat(
     )
 
 
-@router.post("/stream", dependencies=[Depends(enforce_rate_limit)])
+@router.post("/stream", dependencies=[Depends(enforce_rate_limit), Depends(track_question)])
 def chat_stream(
     request: ChatRequest,
     embedder: Embedder = Depends(get_embedder),
