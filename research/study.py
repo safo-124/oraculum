@@ -32,6 +32,7 @@ import numpy as np
 
 from app.services import calibration as cal
 from app.services.confidence import FEATURE_GROUPS, FEATURES
+from research.scoring import score_answer
 
 METHODS: dict[str, list[str]] = {
     "status_prob": ["status_p_answered"],
@@ -53,7 +54,10 @@ class StudyData:
     groups: list[str]
 
 
-def load_rows(path: Path) -> StudyData:
+def load_rows(path: Path, questions: dict[str, dict] | None = None) -> StudyData:
+    """Rows of one run. With the benchmark's questions, labels are re-scored
+    from the stored draft answers using the current scoring rule, so a rule
+    fix never requires running the model again."""
     rows = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -61,6 +65,14 @@ def load_rows(path: Path) -> StudyData:
         row = json.loads(line)
         if "error" in row or "model_status" not in row:
             continue
+        if questions is not None and row["id"] in questions:
+            item = questions[row["id"]]
+            draft = row.get("draft_answer")
+            if item["answerable"] and draft:
+                row["score"] = score_answer(draft, item["answers"], item["scheme"])
+                row["draft_correct"] = row["score"]["correct"]
+            else:
+                row["draft_correct"] = False
         rows.append(row)
     answered = np.array([r["model_status"] == "answered" for r in rows], dtype=bool)
     correct = np.array(
@@ -175,8 +187,10 @@ def run_study(
     seed: int = 0,
     n_boot: int = 1000,
     transfer_path: Path | None = None,
+    questions: dict[str, dict] | None = None,
+    transfer_questions: dict[str, dict] | None = None,
 ) -> tuple[dict, cal.Calibrator]:
-    data = load_rows(runs_path)
+    data = load_rows(runs_path, questions)
     if data.answered.sum() < 20:
         raise SystemExit(
             f"only {int(data.answered.sum())} answered questions in {runs_path}; run more of the benchmark first"
@@ -240,13 +254,15 @@ def run_study(
         for m, s in scores_by_method.items()
     }
     if transfer_path is not None:
-        report["transfer"] = transfer(final, transfer_path)
+        report["transfer"] = transfer(final, transfer_path, transfer_questions)
     return report, final
 
 
-def transfer(calibrator: cal.Calibrator, runs_path: Path) -> dict:
+def transfer(
+    calibrator: cal.Calibrator, runs_path: Path, questions: dict[str, dict] | None = None
+) -> dict:
     """Apply a frozen calibrator and threshold to another dataset (domain shift)."""
-    data = load_rows(runs_path)
+    data = load_rows(runs_path, questions)
     scores = np.full(len(data.rows), np.nan)
     for i, row in enumerate(data.rows):
         if data.answered[i]:

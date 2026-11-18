@@ -209,3 +209,36 @@ class TestStudy:
         report, _ = run_study(runs, n_boot=5)
         report["dataset"]["gold_in_retrieved_passages"] = None
         assert "–" in render_markdown(report)
+
+
+class TestFirstSentenceRule:
+    def test_answer_then_extra_context_is_correct(self) -> None:
+        answer = ("All schools must comply with government-set curriculum standards. "
+                  "In addition, Victoria has four government selective schools that admit students "
+                  "on the basis of an entrance exam and many other details that make this long.")
+        assert squad_scores(answer, ["curriculum standards"])["correct"]
+
+    def test_gold_only_late_in_a_long_answer_does_not_count(self) -> None:
+        answer = ("The schools follow many rules. " + "They have " + "many other obligations " * 10
+                  + "and one of them concerns the curriculum standards.")
+        assert not squad_scores(answer, ["curriculum standards"])["contains"]
+
+    def test_short_answer_with_gold_in_second_sentence_still_counts(self) -> None:
+        answer = "The schools follow many rules. One concerns the curriculum standards."
+        assert squad_scores(answer, ["curriculum standards"])["contains"]
+
+    def test_decimals_do_not_split_sentences(self) -> None:
+        assert squad_scores("It was −11.7 °C (10.9 °F) at Omeo.", ["−11.7 °C"])["correct"]
+
+
+class TestRescoreOnLoad:
+    def test_labels_recomputed_from_stored_drafts(self, tmp_path) -> None:
+        runs = tmp_path / "r.jsonl"
+        runs.write_text(json.dumps({
+            "id": "q1", "group": "g", "answerable": True, "question": "q",
+            "model_status": "answered", "draft_answer": "Curriculum standards. Then a lot more text " + "x " * 40,
+            "draft_correct": False, "features": {},
+        }) + "\n")
+        questions = {"q1": {"id": "q1", "answerable": True, "answers": ["curriculum standards"], "scheme": "squad"}}
+        assert load_rows(runs).correct.tolist() == [0]
+        assert load_rows(runs, questions).correct.tolist() == [1]

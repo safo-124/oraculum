@@ -67,11 +67,20 @@ def main(argv: list[str] | None = None) -> int:
         run_benchmark(BENCH / args.dataset, RUNS / f"{args.dataset}.jsonl", get_settings(),
                       limit=args.limit, reindex=args.reindex)
     elif args.command == "study":
+        from research.datasets import load_questions
         from research.study import run_study, write_outputs
 
+        def questions_of(name):
+            path = BENCH / name
+            return {q["id"]: q for q in load_questions(path)} if (path / "questions.jsonl").exists() else None
+
         transfer = RUNS / f"{args.transfer}.jsonl" if args.transfer else None
-        report, calibrator = run_study(RUNS / f"{args.train}.jsonl", target_risk=args.target_risk,
-                                       k=args.folds, n_boot=args.bootstrap, transfer_path=transfer)
+        report, calibrator = run_study(
+            RUNS / f"{args.train}.jsonl", target_risk=args.target_risk, k=args.folds,
+            n_boot=args.bootstrap, transfer_path=transfer,
+            questions=questions_of(args.train),
+            transfer_questions=questions_of(args.transfer) if args.transfer else None,
+        )
         out_dir = ROOT / "evals" / "study"
         write_outputs(report, calibrator, out_dir, args.calibrator)
         print(f"report: {out_dir / 'REPORT.md'}\ncalibrator: {args.calibrator} "
